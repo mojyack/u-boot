@@ -21,9 +21,9 @@ SECTIONS
 	. = 0x00000000;
 
 	. = ALIGN(8);
-	__image_copy_start = ADDR(.text);
 	.text :
 	{
+		__image_copy_start = .;
 		CPUDIR/start.o (.text*)
 	}
 
@@ -154,7 +154,7 @@ SECTIONS
 	/*
 	 * arch/arm/lib/crt0_64.S assumes __bss_start - __bss_end % 8 == 0
 	 */
-	.bss ADDR(.rela.dyn) (OVERLAY) : {
+	.bss ALIGN(256) : {
 		__bss_start = .;
 		*(.bss*)
 		. = ALIGN(8);
