@@ -15,6 +15,8 @@
 #include <asm/arch-tegra/board.h>
 #include "../p2571/max77620_init.h"
 
+void tegra210_emc_ft_setup(void *fdt);
+
 void pin_mux_mmc(void)
 {
 	struct udevice *dev;
@@ -91,6 +93,7 @@ int ft_board_setup(void *fdt, struct bd_info *bd)
 {
 	ft_mac_address_setup(fdt);
 	ft_carveout_setup(fdt, nodes, ARRAY_SIZE(nodes));
+	tegra210_emc_ft_setup(fdt);
 
 	return 0;
 }

@@ -6,3 +6,5 @@
 #
 
 obj-y	+= p3450-0000.o
+obj-y	+= emc-table.o
+obj-y	+= minerva/
