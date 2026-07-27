@@ -10,7 +10,9 @@
 #include <linux/bitops.h>
 #include <linux/libfdt.h>
 #include <pca953x.h>
+#include <asm/io.h>
 #include <asm/arch/gpio.h>
+#include <asm/arch/mc.h>
 #include <asm/arch/pinmux.h>
 #include <asm/arch-tegra/board.h>
 #include "../p2571/max77620_init.h"
@@ -29,6 +31,33 @@ void pinmux_init(void)
 {
 	pinmux_config_pingrp_table(p3450_0000_pingrps,
 				   ARRAY_SIZE(p3450_0000_pingrps));
+}
+
+/*
+ * MC_SMMU_CONFIG is TrustZone-protected: the TRM (18.5.4.1, step 10) spells out
+ * that a non-secure write to it is silently dropped. On a stock boot cboot runs
+ * secure and turns the SMMU on, and Linux's tegra-smmu driver simply assumes
+ * that happened - its own SMMU_CONFIG write from non-secure EL1 is a no-op. The
+ * RAM-boot flow skips cboot, so without this every SMMU client puts raw IOVAs on
+ * the bus: the GPU falls over in ACR ("gpusrd: EMEM address decode error", ACR
+ * boot -110) and the display controller buries the MC in decode errors as soon
+ * as it starts scanning out.
+ *
+ * Only the global enable is needed here. The per-client MC_SMMU_<engine>_ASID
+ * registers are zero out of reset, so clients keep bypassing translation until
+ * Linux attaches them - and those writes are not TZ-restricted.
+ *
+ * On the QSPI boot path U-Boot runs non-secure, so this write does nothing; that
+ * is fine, cboot has already done it.
+ */
+int nvidia_board_init(void)
+{
+	struct mc_ctlr *mc = (struct mc_ctlr *)NV_PA_MC_BASE;
+
+	writel(TEGRA_MC_SMMU_CONFIG_ENABLE, &mc->mc_smmu_config);
+	readl(&mc->mc_smmu_config);	/* flush the posted write */
+
+	return 0;
 }
 
 void pin_mux_mmc(void)
