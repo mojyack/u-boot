@@ -123,6 +123,16 @@ ENTRY(tegra_secondary_entry)
 	msr	oslar_el1, x0
 	isb
 
+	/*
+	 * Re-apply the Cortex-A57 erratum workarounds (errata.S). CPUACTLR_EL1
+	 * is per-CPU and returns to its reset value whenever a core comes out
+	 * of reset, so this is needed both for a CPU_ON bring-up and on every
+	 * warm boot after a CPU_SUSPEND core power-gate - exactly as ARM
+	 * Trusted Firmware re-runs its CPU reset handler on those paths. Must
+	 * come before coherency and caches, and works without a stack.
+	 */
+	bl	tegra_a57_apply_errata
+
 	/* cpu = MPIDR_EL1.Aff0 (the four A57s share a single cluster on T210) */
 	mrs	x20, mpidr_el1
 	and	x20, x20, #0xff
