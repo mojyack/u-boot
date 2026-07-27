@@ -14,8 +14,22 @@
 #include <asm/arch/pinmux.h>
 #include <asm/arch-tegra/board.h>
 #include "../p2571/max77620_init.h"
+#include "pinmux-config-p3450-0000.h"
 
 void tegra210_emc_ft_setup(void *fdt);
+
+/*
+ * On a stock boot nvtboot/cboot programs the board pinmux out of the bl-dtb
+ * before it hands over, so U-Boot has never had to. The RAM-boot flow jumps
+ * straight from nvtboot into U-Boot, which leaves every pad at its reset
+ * value - tristated, so nothing the SoC drives actually reaches the board.
+ * Program the table here so both boot paths end up in the same state.
+ */
+void pinmux_init(void)
+{
+	pinmux_config_pingrp_table(p3450_0000_pingrps,
+				   ARRAY_SIZE(p3450_0000_pingrps));
+}
 
 void pin_mux_mmc(void)
 {
