@@ -149,6 +149,19 @@ ENTRY(tegra_secondary_entry)
 	isb
 
 	/*
+	 * Only now drop whatever this core's caches and TLBs came back with. A
+	 * core reaching here has just come out of reset, so their contents are
+	 * undefined and must not be trusted.
+	 *
+	 * This has to run with coherency already on. Doing IC IALLU, DC ISW and
+	 * TLBI ALLE3 with SMPEN clear works for hundreds of C7 cycles and then
+	 * locks the core up mid-sequence; ARM Trusted Firmware never has that
+	 * window, because cortex_a57_reset_func() sets SMP in the reset handler
+	 * and everything else follows.
+	 */
+	bl	tegra_cpu_warmboot_invalidate
+
+	/*
 	 * Program the architected-timer frequency for this core. CNTFRQ_EL0 is a
 	 * per-CPU register that only firmware (EL3) can write; the boot CPU had
 	 * it set already, so the kernel treats a differing value on a secondary
@@ -190,6 +203,60 @@ ENTRY(tegra_secondary_entry)
 	isb
 	armv8_switch_to_el2_m x4, x5, x6
 ENDPROC(tegra_secondary_entry)
+
+/*
+ * void tegra_cpu_warmboot_invalidate(void)
+ *
+ * Warm-boot cache/TLB invalidation for a core that has just come out of reset,
+ * run at EL3 with the MMU and caches off. This is the counterpart of ARM
+ * Trusted Firmware running its CPU reset handler on every warm boot; without it
+ * the core resumes from a flow-controller power-gate carrying whatever its L1
+ * tags and data RAMs happen to hold.
+ *
+ * That was not theoretical: leaving it out corrupted page-cache pages. A page
+ * freshly DMA'd from the SD card would come back with one 64-byte line (an A57
+ * cache line) still holding the *previous* occupant of that physical page,
+ * because a stale valid line in this core's L1 satisfied the load instead of
+ * the DMA'd data. It showed up as random ELF/firmware files reading back wrong
+ * - most visibly sshd's session binary, which segfaulted on every connection
+ * until the page cache was dropped. Disabling the cpu-sleep idle state made it
+ * go away; this makes it go away with cpu-sleep left on.
+ *
+ * Invalidate ONLY - never clean. After a power-gate the L1 contents are
+ * undefined, so a clean would push undefined data out into memory.
+ *
+ * Leaf, no stack (it runs before the per-CPU EL3 stack is set up), clobbers
+ * x1-x8. A57 is ARMv8.0 (no FEAT_CCIDX), so the legacy CCSIDR_EL1 layout is
+ * assumed, as in tegra_cpu_powerdn_wfi() below.
+ */
+ENTRY(tegra_cpu_warmboot_invalidate)
+	msr	csselr_el1, xzr		/* select L1 (level 0), data cache */
+	isb
+	mrs	x1, ccsidr_el1
+	ubfx	x2, x1, #0, #3		/* x2 = log2(line bytes) - 4 */
+	add	x2, x2, #4		/* x2 = log2(line bytes) */
+	ubfx	x3, x1, #3, #10		/* x3 = associativity - 1 (ways) */
+	ubfx	x4, x1, #13, #15	/* x4 = number of sets - 1 */
+	clz	w5, w3			/* w5 = bit position of the way field */
+1:	/* set loop */
+	mov	x6, x3			/* x6 = working copy of ways */
+2:	/* way loop */
+	lsl	x7, x6, x5		/* way << way-shift */
+	lsl	x8, x4, x2		/* set << line-shift */
+	orr	x7, x7, x8		/* set/way, cache level 0 (bits[3:1]=0) */
+	dc	isw, x7			/* invalidate by set/way */
+	subs	x6, x6, #1		/* next way */
+	b.ge	2b
+	subs	x4, x4, #1		/* next set */
+	b.ge	1b
+	dsb	sy
+
+	ic	iallu			/* L1 instruction cache + branch predictor */
+	tlbi	alle3			/* EL3 TLB (we are at EL3 with MMU off) */
+	dsb	sy
+	isb
+	ret
+ENDPROC(tegra_cpu_warmboot_invalidate)
 
 /*
  * void tegra_cpu_powerdn_wfi(void)
