@@ -403,6 +403,12 @@ enum pmux_func {
 	PMUX_FUNC_COUNT,
 };
 
+/*
+ * Unlike the earlier SoCs, Tegra210 names its reserved functions from zero, so
+ * PMUX_FUNC_RSVD0 - not RSVD1 - is the one that selects mux value 0.
+ */
+#define PMUX_FUNC_RSVD_BASE PMUX_FUNC_RSVD0
+
 static const char * const tegra_pinctrl_to_pingrp[] = {
 	[PMUX_PINGRP_SDMMC1_CLK_PM0] = "sdmmc1_clk_pm0",
 	[PMUX_PINGRP_SDMMC1_CMD_PM1] = "sdmmc1_cmd_pm1",
