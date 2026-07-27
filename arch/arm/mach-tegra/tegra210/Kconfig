@@ -38,6 +38,27 @@ endchoice
 config SYS_SOC
 	default "tegra210"
 
+config TEGRA210_CARVEOUT_EXACT_SIZE
+	bool "Derive the carve-out size from the memory controller"
+	default n
+	help
+	  Instead of reserving a conservative fixed 512MB at the top of the
+	  RAM below 4GiB, walk the memory controller's carve-out registers
+	  (secure OS, CPU microcode, video protect and the five general
+	  security carve-outs) and reserve only from the lowest programmed
+	  carve-out upwards.
+
+	  This is only correct when U-Boot itself programmed those carve-outs,
+	  or ran secure alongside the software that did: the MC reports nothing
+	  for a carve-out nobody programmed, and several of these registers are
+	  TrustZone protected and read back all-ones from non-secure. Note also
+	  that carve-outs U-Boot programs from board_init() land too late to be
+	  seen here, as DRAM is sized in board_init_f.
+
+	  Say N if earlier boot software owns the carve-outs and hands U-Boot a
+	  memory layout that already excludes them - which is what the Tegra
+	  cboot handoff path does.
+
 source "board/nvidia/p2371-0000/Kconfig"
 source "board/nvidia/p2371-2180/Kconfig"
 source "board/nvidia/p2571/Kconfig"

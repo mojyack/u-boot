@@ -40,6 +40,9 @@
 #include <asm/arch/pinmux.h>
 #endif
 #include <asm/arch/tegra.h>
+#if IS_ENABLED(CONFIG_TEGRA210_CARVEOUT_EXACT_SIZE)
+#include <asm/arch/mc.h>
+#endif
 #ifdef CONFIG_TEGRA_CLOCK_SCALING
 #include <asm/arch/emc.h>
 #endif
@@ -294,6 +297,75 @@ int board_late_init(void)
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_TEGRA210_CARVEOUT_EXACT_SIZE)
+/*
+ * Derive the carve-out size for one bank from the memory controller instead of
+ * assuming a worst case. Every carve-out the MC knows about is checked, and the
+ * lowest base that falls inside the bank wins; everything from there to the top
+ * of the bank is treated as carved out.
+ *
+ * The MC only reports carve-outs somebody actually programmed, so this is only
+ * meaningful when U-Boot is the software that set them up, or ran secure
+ * alongside whoever did. Several of these registers are also TrustZone
+ * protected and read back all-ones from non-secure (MC_SMMU_CONFIG demonstrably
+ * does), which would be read as a bogus carve-out base.
+ */
+/*
+ * Fold one carve-out into the running minimum. A carve-out only counts if it
+ * has a non-zero size and starts inside the bank; the caller seeds *lowest with
+ * the top of the bank, so carve-outs nobody programmed leave the bank whole.
+ */
+static void carveout_t210_lowest(u32 *bom, u32 *bom_hi, u32 *size,
+				 phys_addr_t bank_start, phys_addr_t bank_end,
+				 phys_addr_t *lowest)
+{
+	phys_addr_t addr = readl(bom) | ((phys_addr_t)readl(bom_hi) << 32);
+
+	if (readl(size) && addr >= bank_start && addr <= bank_end &&
+	    addr < *lowest)
+		*lowest = addr;
+}
+
+static phys_size_t carveout_t210_size(bool below_4g)
+{
+	struct mc_ctlr *mc = (struct mc_ctlr *)NV_PA_MC_BASE;
+	const phys_addr_t dram_base = CFG_SYS_SDRAM_BASE;
+	const phys_addr_t bank_start = below_4g ? dram_base
+						: dram_base + SZ_2G;
+	const phys_addr_t bank_end = below_4g ? dram_base + SZ_2G
+					      : dram_base + gd->ram_size;
+	phys_addr_t carveout_start = bank_end;
+	int i;
+
+	/* Secure OS / secure monitor */
+	carveout_t210_lowest(&mc->mc_sec_carveout_bom,
+			     &mc->mc_sec_carveout_adr_hi,
+			     &mc->mc_sec_carveout_size_mb,
+			     bank_start, bank_end, &carveout_start);
+
+	/* CPU microcode (Denver MTS) */
+	carveout_t210_lowest(&mc->mc_mts_carveout_bom,
+			     &mc->mc_mts_carveout_adr_hi,
+			     &mc->mc_mts_carveout_size_mb,
+			     bank_start, bank_end, &carveout_start);
+
+	/* Video protect region */
+	carveout_t210_lowest(&mc->mc_video_protect_bom,
+			     &mc->mc_video_protect_bom_adr_hi,
+			     &mc->mc_video_protect_size_mb,
+			     bank_start, bank_end, &carveout_start);
+
+	/* The five general security carve-outs (GSC1..GSC5) */
+	for (i = 0; i < ARRAY_SIZE(mc->mc_security_carveout); i++)
+		carveout_t210_lowest(&mc->mc_security_carveout[i].bom,
+				     &mc->mc_security_carveout[i].bom_hi,
+				     &mc->mc_security_carveout[i].size_128kb,
+				     bank_start, bank_end, &carveout_start);
+
+	return bank_end - carveout_start;
+}
+#endif
+
 /*
  * In some SW environments, a memory carve-out exists to house a secure
  * monitor, a trusted OS, and/or various statically allocated media buffers.
@@ -316,10 +388,14 @@ int board_late_init(void)
  * - 64 bit ports which are assumed to use a carve-out of a conservatively
  *   hard-coded size.
  */
-static ulong carveout_size(void)
+static ulong carveout_size(bool below_4g)
 {
 #ifdef CONFIG_ARM64
-	return SZ_512M;
+#if IS_ENABLED(CONFIG_TEGRA210_CARVEOUT_EXACT_SIZE)
+	return carveout_t210_size(below_4g);
+#else
+	return below_4g ? SZ_512M : 0;
+#endif
 #elif defined(CONFIG_ARMV7_SECURE_RESERVE_SIZE)
 	// BASE+SIZE might not == 4GB. If so, we want the carveout to cover
 	// from BASE to 4GB, not BASE to BASE+SIZE.
@@ -349,9 +425,18 @@ static ulong usable_ram_size_below_4g(void)
 		total_size_below_4g = SZ_2G;
 
 	/* Calculate usable RAM by subtracting out any carve-out size */
-	usable_size_below_4g = total_size_below_4g - carveout_size();
+	usable_size_below_4g = total_size_below_4g - carveout_size(true);
 
 	return usable_size_below_4g;
+}
+
+/*
+ * Determine the amount of usable RAM above 4GiB, taking into account any
+ * carve-out that may be assigned.
+ */
+static phys_size_t usable_ram_size_above_4g(void)
+{
+	return (gd->ram_size - SZ_2G) - carveout_size(false);
 }
 
 /*
@@ -399,7 +484,7 @@ int dram_init_banksize(void)
 #ifdef CONFIG_PHYS_64BIT
 	if (gd->ram_size > SZ_2G) {
 		gd->dram[1].start = 0x100000000;
-		gd->dram[1].size = gd->ram_size - SZ_2G;
+		gd->dram[1].size = usable_ram_size_above_4g();
 	} else
 #endif
 	{
