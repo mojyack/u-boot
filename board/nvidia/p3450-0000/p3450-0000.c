@@ -9,6 +9,7 @@
 #include <i2c.h>
 #include <linux/bitops.h>
 #include <linux/libfdt.h>
+#include <linux/sizes.h>
 #include <pca953x.h>
 #include <asm/io.h>
 #include <asm/arch/gpio.h>
@@ -50,12 +51,82 @@ void pinmux_init(void)
  * On the QSPI boot path U-Boot runs non-secure, so this write does nothing; that
  * is fine, cboot has already done it.
  */
+/*
+ * The GPU's write-protected region, where the ACR firmware keeps the signed
+ * low-secure ucode it bootstraps FECS/GPCCS/PMU from. It is one of the memory
+ * controller's five general security carveouts, and only secure mode can set it
+ * up - so, like the SMMU enable above, it is cboot's job on a stock boot and
+ * ours on the RAM-boot path.
+ *
+ * The base and size below are what a cboot boot leaves behind, read back out of
+ * the GPU (nouveau's acr subdev logs "WPR region is from 0xff500000-0xff540000"
+ * at trace level). It sits in the carveout gap above the top of DRAM bank 0,
+ * which rp1.dts caps at 0xfee00000, and below the LP0 resume vector at
+ * 0xff780000, so nothing else claims it.
+ *
+ * Without this the GPU is handed a garbage aperture. nouveau only range-checks
+ * it (gm20b_acr_wpr_alloc), and a nonsense window is comfortably larger than the
+ * ~72 KiB WPR image, so the check passes and ACR reports success while writing
+ * outside any protected region. The low-secure ucode then fails validation, the
+ * PMU falcon halts before it can post its INIT message, and everything
+ * downstream times out: "pmu:hpq: timeout waiting for queue ready",
+ * "gr: init failed, -110", then a gf100_gr_fecs_bind_pointer timeout on the
+ * first GL client.
+ *
+ * The carveout register layout is not in the TRM; the field meanings and this
+ * configuration follow hekate (bdk/mem/mc_t210.h, bootloader/l4t/l4t.c), whose
+ * L4T launcher programs the same carveouts for the same kernel.
+ */
+#define GPU_WPR_CARVEOUT	1	/* MC_SECURITY_CARVEOUT2 */
+#define GPU_WPR_BASE		0xff500000
+#define GPU_WPR_SIZE		SZ_256K
+
+static void gpu_wpr_carveout_init(struct mc_ctlr *mc)
+{
+	struct mc_sec_carveout *gsc = &mc->mc_security_carveout[GPU_WPR_CARVEOUT];
+	int i;
+
+	writel(GPU_WPR_BASE, &gsc->bom);
+	writel(0, &gsc->bom_hi);
+	writel(GPU_WPR_SIZE / SZ_128K, &gsc->size_128kb);
+
+	for (i = 0; i < 5; i++) {
+		writel(0, &gsc->client_access[i]);
+		writel(0, &gsc->client_force_internal_access[i]);
+	}
+	writel(TEGRA_MC_SEC_CARVEOUT_CA2_R_GPU |
+	       TEGRA_MC_SEC_CARVEOUT_CA2_W_GPU, &gsc->client_access[2]);
+	writel(TEGRA_MC_SEC_CARVEOUT_CA4_R_GPU2 |
+	       TEGRA_MC_SEC_CARVEOUT_CA4_W_GPU2, &gsc->client_access[4]);
+
+	/*
+	 * LOCKED is not optional: the TRM (18.6.9) notes the memory controller
+	 * only publishes the VPR and WPR apertures to the GPU once they are
+	 * locked. VPR is already locked by tegra_gpu_config(), which board_init()
+	 * runs before it gets here.
+	 */
+	writel(TEGRA_MC_SEC_CARVEOUT_CFG_LOCKED |
+	       TEGRA_MC_SEC_CARVEOUT_CFG_UNTRANSLATED_ONLY |
+	       TEGRA_MC_SEC_CARVEOUT_CFG_RD_NS |
+	       TEGRA_MC_SEC_CARVEOUT_CFG_RD_SEC |
+	       TEGRA_MC_SEC_CARVEOUT_CFG_RD_FALCON_LS |
+	       TEGRA_MC_SEC_CARVEOUT_CFG_RD_FALCON_HS |
+	       TEGRA_MC_SEC_CARVEOUT_CFG_WR_FALCON_LS |
+	       TEGRA_MC_SEC_CARVEOUT_CFG_WR_FALCON_HS |
+	       TEGRA_MC_SEC_CARVEOUT_CFG_APERTURE_ID(GPU_WPR_CARVEOUT + 1) |
+	       TEGRA_MC_SEC_CARVEOUT_CFG_SEND_CFG_TO_GPU |
+	       TEGRA_MC_SEC_CARVEOUT_CFG_FORCE_APERTURE_ID_MATCH, &gsc->cfg0);
+	readl(&gsc->cfg0);	/* flush the posted write */
+}
+
 int nvidia_board_init(void)
 {
 	struct mc_ctlr *mc = (struct mc_ctlr *)NV_PA_MC_BASE;
 
 	writel(TEGRA_MC_SMMU_CONFIG_ENABLE, &mc->mc_smmu_config);
 	readl(&mc->mc_smmu_config);	/* flush the posted write */
+
+	gpu_wpr_carveout_init(mc);
 
 	return 0;
 }

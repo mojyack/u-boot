@@ -6,6 +6,22 @@
 #ifndef _TEGRA210_MC_H_
 #define _TEGRA210_MC_H_
 
+#include <linux/bitops.h>
+
+/**
+ * One of the five general security carveouts (GSCs). They sit at 0xc08 and
+ * repeat with a 0x50 stride.
+ */
+struct mc_sec_carveout {
+	u32 cfg0;				/* offset 0x00 */
+	u32 bom;				/* offset 0x04 */
+	u32 bom_hi;				/* offset 0x08 */
+	u32 size_128kb;				/* offset 0x0C */
+	u32 client_access[5];			/* offset 0x10 - 0x20 */
+	u32 client_force_internal_access[5];	/* offset 0x24 - 0x34 */
+	u32 reserved[6];			/* offset 0x38 - 0x4C */
+};
+
 /**
  * Defines the memory controller registers we need/care about
  */
@@ -61,9 +77,44 @@ struct mc_ctlr {
 	u32 mc_video_protect_bom;		/* offset 0x648 */
 	u32 mc_video_protect_size_mb;		/* offset 0x64c */
 	u32 mc_video_protect_reg_ctrl;		/* offset 0x650 */
+	u32 reserved11[7];			/* offset 0x654 - 0x66C */
+	u32 mc_sec_carveout_bom;		/* offset 0x670 */
+	u32 mc_sec_carveout_size_mb;		/* offset 0x674 */
+	u32 reserved12[192];			/* offset 0x678 - 0x974 */
+	u32 mc_video_protect_bom_adr_hi;	/* offset 0x978 */
+	u32 reserved13[9];			/* offset 0x97C - 0x99C */
+	u32 mc_mts_carveout_bom;		/* offset 0x9A0 */
+	u32 mc_mts_carveout_size_mb;		/* offset 0x9A4 */
+	u32 mc_mts_carveout_adr_hi;		/* offset 0x9A8 */
+	u32 reserved14[10];			/* offset 0x9AC - 0x9D0 */
+	u32 mc_sec_carveout_adr_hi;		/* offset 0x9D4 */
+	u32 reserved15[140];			/* offset 0x9D8 - 0xC04 */
+	struct mc_sec_carveout mc_security_carveout[5];	/* offset 0xC08 - 0xD97 */
 };
 
 #define TEGRA_MC_SMMU_CONFIG_ENABLE (1 << 0)
+
+/* MC_SECURITY_CARVEOUT<n>_CFG0 */
+#define TEGRA_MC_SEC_CARVEOUT_CFG_TZ_SECURE		BIT(0)
+#define TEGRA_MC_SEC_CARVEOUT_CFG_LOCKED		BIT(1)
+#define TEGRA_MC_SEC_CARVEOUT_CFG_UNTRANSLATED_ONLY	BIT(2)
+#define TEGRA_MC_SEC_CARVEOUT_CFG_RD_NS			(1 << 3)
+#define TEGRA_MC_SEC_CARVEOUT_CFG_RD_SEC		(2 << 3)
+#define TEGRA_MC_SEC_CARVEOUT_CFG_RD_FALCON_LS		(4 << 3)
+#define TEGRA_MC_SEC_CARVEOUT_CFG_RD_FALCON_HS		(8 << 3)
+#define TEGRA_MC_SEC_CARVEOUT_CFG_WR_NS			(1 << 7)
+#define TEGRA_MC_SEC_CARVEOUT_CFG_WR_SEC		(2 << 7)
+#define TEGRA_MC_SEC_CARVEOUT_CFG_WR_FALCON_LS		(4 << 7)
+#define TEGRA_MC_SEC_CARVEOUT_CFG_WR_FALCON_HS		(8 << 7)
+#define TEGRA_MC_SEC_CARVEOUT_CFG_APERTURE_ID(id)	((id) << 11)
+#define TEGRA_MC_SEC_CARVEOUT_CFG_SEND_CFG_TO_GPU	BIT(22)
+#define TEGRA_MC_SEC_CARVEOUT_CFG_FORCE_APERTURE_ID_MATCH BIT(26)
+
+/* MC_SECURITY_CARVEOUT<n>_CLIENT_ACCESS2 / _CLIENT_ACCESS4 */
+#define TEGRA_MC_SEC_CARVEOUT_CA2_R_GPU			BIT(24)
+#define TEGRA_MC_SEC_CARVEOUT_CA2_W_GPU			BIT(25)
+#define TEGRA_MC_SEC_CARVEOUT_CA4_R_GPU2		BIT(8)
+#define TEGRA_MC_SEC_CARVEOUT_CA4_W_GPU2		BIT(9)
 
 #define TEGRA_MC_VIDEO_PROTECT_REG_WRITE_ACCESS_ENABLED		(0 << 0)
 #define TEGRA_MC_VIDEO_PROTECT_REG_WRITE_ACCESS_DISABLED	(1 << 0)
