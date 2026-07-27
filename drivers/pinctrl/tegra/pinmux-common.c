@@ -8,6 +8,15 @@
 #include <asm/io.h>
 #include <asm/arch/pinmux.h>
 
+/*
+ * The reserved functions are numbered from one on Tegra20 through Tegra124,
+ * but from zero on Tegra210. Either way the lowest-numbered one is the
+ * function selected by mux value 0.
+ */
+#ifndef PMUX_FUNC_RSVD_BASE
+#define PMUX_FUNC_RSVD_BASE PMUX_FUNC_RSVD1
+#endif
+
 /* return 1 if a pingrp is in range */
 #define pmux_pingrp_isvalid(pin) (((pin) >= 0) && ((pin) < PMUX_PINGRP_COUNT))
 
@@ -167,8 +176,8 @@ void pinmux_set_func(enum pmux_pingrp pin, enum pmux_func func)
 	assert(pmux_pingrp_isvalid(pin));
 	assert(pmux_func_isvalid(func));
 
-	if (func >= PMUX_FUNC_RSVD1) {
-		mux = (func - PMUX_FUNC_RSVD1) & 3;
+	if (func >= PMUX_FUNC_RSVD_BASE) {
+		mux = (func - PMUX_FUNC_RSVD_BASE) & 3;
 	} else {
 		/* Search for the appropriate function */
 		for (i = 0; i < 4; i++) {
