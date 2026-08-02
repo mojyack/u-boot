@@ -27,6 +27,102 @@
 .align 3
 
 ENTRY(tegra_secondary_entry)
+	/*
+	 * Invalidate the branch predictor, as the T210's own firmware does on
+	 * every core power-up and as nothing else here does.
+	 *
+	 * An A57 coming out of a Tegra core power-gate carries whatever its
+	 * branch-target buffer happens to hold, and IC IALLU on its own does not
+	 * clear it: on this part the BTB is only invalidated together with the
+	 * I-cache, and only while CPUACTLR_EL1[0] is set. ARM Trusted Firmware
+	 * does exactly this at the top of tegra_secure_entrypoint, gated on
+	 * ERRATA_TEGRA_INVALIDATE_BTB_AT_BOOT, which its build enables for T210
+	 * (and only T210 - the B01 respin is skipped at runtime).
+	 *
+	 * Without it a core that has just been powered up occasionally follows a
+	 * stale branch prediction into nowhere and is never seen again. It shows
+	 * up as a CPU_ON that times out ("CPUn: failed to come online", ~8% of
+	 * bring-ups on this board's CPU3, 0% under ARM-TF) and as a core lost on
+	 * a C7 resume, both of them dying in the same handful of instructions
+	 * after the eret with memory demonstrably intact.
+	 *
+	 * This has to be the first thing the core does: CPUACTLR_EL1 may only be
+	 * written "after a powerup reset, before the MMU is enabled and before
+	 * any ACE or CHI traffic begins" (Cortex-A57 TRM 4.3.65), and the
+	 * uncached read below is bus traffic. x0/x1 are dead here - this is a
+	 * reset vector, entered with no live state.
+	 */
+	mrs	x0, S3_1_C15_C2_0		/* CPUACTLR_EL1 */
+	orr	x1, x0, #1			/* invalidate BTB with I$ */
+	msr	S3_1_C15_C2_0, x1
+	dsb	sy
+	isb
+	ic	iallu				/* the actual invalidate */
+	dsb	sy
+	isb
+	msr	S3_1_C15_C2_0, x0		/* restore */
+	dsb	sy
+	isb
+	.rept	7				/* as ARM-TF has it: wait */
+	nop
+	.endr
+
+	/*
+	 * ...and then reset the core, once, before it runs anything else.
+	 *
+	 * This is the other half of the same T210 workaround. ARM Trusted
+	 * Firmware, immediately after the invalidate above, checks OSLSR_EL1.OSLK
+	 * and - if it is set, which on an A57 means this core has just come out
+	 * of a real reset rather than out of the warm reset below - turns off
+	 * regional clock gating and requests a warm reset of the core through
+	 * RMR_EL3, then parks in WFI until it happens.  The core re-enters here
+	 * with OSLK clear and falls through.
+	 *
+	 * So a T210 A57 never actually executes firmware in the state a
+	 * power-gate leaves it in: the first thing it does is reset itself into a
+	 * known one.  We were the exception, and the price was a core that
+	 * occasionally never came back - a CPU_ON that timed out, or a lost core
+	 * on a C7 resume, both dying within a few instructions of the eret.
+	 *
+	 * The reset has to be taken on *every* power-up. ARM-TF breaks the loop
+	 * with OSLSR_EL1.OSLK, on the grounds that a reset sets it and the warm
+	 * reset requested here does not; that test holds for a CPU_ON bring-up on
+	 * this chain but not for a C7 resume, where it silently skips the reset -
+	 * which leaves the failure alive on exactly the cores that gate rarely and
+	 * gate long, and looks fixed under any load. A per-CPU word in
+	 * ._secure.data is used instead: set on the way in, cleared on the way
+	 * out, so it depends on nothing surviving the reset and is true once per
+	 * power-up by construction.
+	 * The trailing nops are ARM-TF's, to keep speculative execution away from
+	 * the code after the reset request.
+	 */
+	mrs	x2, mpidr_el1
+	and	x2, x2, #0xff
+	adr	x1, tegra_warmboot_reset_pending
+	ldr	w0, [x1, x2, lsl #2]
+	cbnz	w0, 2f				/* pass two: the reset happened */
+	mov	w0, #1
+	str	w0, [x1, x2, lsl #2]
+	dsb	sy
+	msr	oslar_el1, xzr			/* as ARM-TF does before the reset */
+	movz	x0, #0x8000, lsl #48		/* CPUACTLR_EL1: RCG off */
+	msr	S3_1_C15_C2_0, x0
+	isb
+	mov	x0, #3				/* RMR_EL3: RR | AA64 */
+	msr	rmr_el3, x0
+	isb
+	dsb	sy
+1:	wfi
+	b	1b
+	.rept	65
+	nop
+	.endr
+2:	str	wzr, [x1, x2, lsl #2]		/* arm it again for the next one */
+	dsb	sy
+	mov	x0, #1				/* restore the OS lock */
+	msr	oslar_el1, x0
+	isb
+
 	/* cpu = MPIDR_EL1.Aff0 (the four A57s share a single cluster on T210) */
 	mrs	x20, mpidr_el1
 	and	x20, x20, #0xff

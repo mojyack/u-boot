@@ -106,6 +106,12 @@ static u32 flowctrl_halt_off[4] __secure_data = { 0x00, 0x14, 0x1c, 0x24 };
  */
 u64 tegra_cpu_entry[4] __secure_data;
 u64 tegra_cpu_context[4] __secure_data;
+/*
+ * Set on the way into the warm-boot self-reset (psci_secondary.S) and cleared
+ * on the way out, so the reset is taken exactly once per power-up, without
+ * depending on any architectural bit surviving it.
+ */
+u32 tegra_warmboot_reset_pending[4] __secure_data;
 u64 tegra_boot_cntfrq __secure_data;
 static u8 cpu_started[4] __secure_data;
 static u8 psci_cpu_state[4] __secure_data = {
