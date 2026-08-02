@@ -295,6 +295,79 @@ static void __secure tegra_fc_cpu_disarm(u32 cpu)
 }
 
 /*
+ * Disable this core's GICv2 CPU interface, as ARM-TF does from
+ * tegra_gic_cpuif_deactivate() at the end of tegra_pwr_domain_off(): with the
+ * interface off nothing can assert an interrupt at this core, so it stays
+ * power-gated until a CPU_ON ungates it. tegra_gic_secondary_setup() brings the
+ * interface back wholesale on the warm-boot path.
+ */
+static void __secure tegra_gic_cpuif_deactivate(void)
+{
+	writel(0, TEGRA_GICC_BASE + GICC_CTLR);
+	readl(TEGRA_GICC_BASE + GICC_CTLR);
+}
+
+/*
+ * Arm the flow controller to power-gate this core permanently: same as
+ * tegra_fc_cpu_powerdn() above but with no wake-event enables in HALT, so no
+ * GIC or LIC interrupt can bring the core back.
+ */
+static void __secure tegra_fc_cpu_off(u32 cpu)
+{
+	u32 csr = FLOWCTRL_CSR_INTR_FLAG | FLOWCTRL_CSR_EVENT_FLAG |
+		  FLOWCTRL_CSR_ENABLE | (FLOWCTRL_WAIT_WFI_BITMAP << cpu);
+
+	writel(csr, NV_PA_FLOW_BASE + flowctrl_csr_off[cpu]);
+	readl(NV_PA_FLOW_BASE + flowctrl_csr_off[cpu]);
+	writel(FLOWCTRL_WAITEVENT, NV_PA_FLOW_BASE + flowctrl_halt_off[cpu]);
+	readl(NV_PA_FLOW_BASE + flowctrl_halt_off[cpu]);
+}
+
+/*
+ * CPU_OFF: take the calling core out of the system until some other core brings
+ * it back with CPU_ON. This is what backs Linux CPU hotplug, and the secondary
+ * half of reboot and kexec; without it the generic NOT_IMPLEMENTED stub makes
+ * the kernel BUG in cpu_die().
+ *
+ * Modelled on ARM-TF t210's tegra_soc_pwr_domain_off() plus the
+ * tegra_gic_cpuif_deactivate() that tegra_pwr_domain_off() appends. It differs
+ * from CPU_SUSPEND in exactly two ways: the flow controller is armed with no
+ * wake-event enables, and this core's GIC CPU interface is switched off - so
+ * nothing can assert an interrupt at it and it stays gated. CPU_SUSPEND must do
+ * neither, since the GIC is its only wake source.
+ *
+ * The affinity state is published before the gate, not after: the core calling
+ * this is the one being switched off, so no code of ours runs afterwards, and
+ * the kernel's psci_cpu_kill() spins on AFFINITY_INFO from another core until it
+ * reads OFF.
+ */
+s32 __secure psci_cpu_off(void)
+{
+	u64 mpidr;
+	u32 cpu;
+
+	asm volatile("mrs %0, mpidr_el1" : "=r"(mpidr));
+	cpu = mpidr & MPIDR_CPU_MASK;
+	if (cpu == 0 || cpu >= 4)
+		return ARM_PSCI_RET_DENIED;
+
+	/* Retire any resume entry: "entry is armed" must keep meaning "a gate is
+	 * armed and still pending" for the trampoline's stale-entry trap. */
+	tegra_cpu_entry[cpu] = 0;
+	tegra_cpu_context[cpu] = 0;
+	psci_cpu_state[cpu] = PSCI_AFFINITY_LEVEL_OFF;
+	asm volatile("dsb sy; isb" ::: "memory");
+
+	tegra_gic_cpuif_deactivate();
+
+	for (;;) {
+		tegra_fc_cpu_off(cpu);
+		asm volatile("dsb sy" ::: "memory");
+		tegra_cpu_powerdn_wfi();
+	}
+}
+
+/*
  * CPU_SUSPEND for the DT cpu-sleep state (0x40000007 => single-core power-down).
  * The kernel has already saved its CPU context (cpu_suspend()) and calls this
  * from its suspend finisher with entry_point = cpu_resume. We record that entry
