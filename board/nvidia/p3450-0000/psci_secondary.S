@@ -192,9 +192,19 @@ ENTRY(tegra_secondary_entry)
 	 * Fetch the kernel entry point and PSCI context ID that psci_cpu_on()
 	 * stashed for this CPU. The context ID must land in x0 on entry to the
 	 * kernel, per the PSCI spec.
+	 *
+	 * The entry is consumed: it is zeroed once read, so each armed entry
+	 * matches exactly one warm boot. A core that gets here with no armed
+	 * entry was power-gated outside any PSCI call - e.g. by a flow
+	 * controller left armed across a plain kernel WFI - and jumping through
+	 * the stale pointer would be a wild resume into a reused stack frame.
+	 * Park the core instead, so the fault is a missing CPU rather than a
+	 * silent corruption of whatever that frame has become.
 	 */
 	adr	x0, tegra_cpu_entry
 	ldr	x4, [x0, x20, lsl #3]
+	str	xzr, [x0, x20, lsl #3]
+	cbz	x4, 9f
 	adr	x0, tegra_cpu_context
 	ldr	x0, [x0, x20, lsl #3]
 
@@ -202,6 +212,10 @@ ENTRY(tegra_secondary_entry)
 	mov	x5, #ES_TO_AARCH64
 	isb
 	armv8_switch_to_el2_m x4, x5, x6
+
+9:	/* Unexpected warm boot: no armed entry, so there is nowhere to go. */
+1:	wfi
+	b	1b
 ENDPROC(tegra_secondary_entry)
 
 /*

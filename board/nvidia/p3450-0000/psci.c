@@ -266,6 +266,35 @@ static void __secure tegra_fc_cpu_powerdn(u32 cpu)
 }
 
 /*
+ * Undo an arm that did not result in a gate.
+ *
+ * CSR ENABLE is cleared by hardware only when a power-gate sequence actually
+ * completes (TRM 17.2.3). If the WFI below falls through instead - WFI completes
+ * immediately whenever a physical interrupt is pending, regardless of PSTATE
+ * masking, and we leave the GIC CPU interface enabled - the flow controller
+ * stays armed while we return to the kernel. The next *plain* kernel WFI
+ * (cpuidle state0, entered hundreds of times a second on an idle core) would
+ * then power-gate the core outside any PSCI call, and it would warm boot into
+ * the stale entry of the previous suspend. Clear the latched wake status and
+ * drop the arm, then put the wake enables back so the HALT register reads as it
+ * did before.
+ *
+ * ARM-TF never needs this because its power-down WFI path is __dead2; we return
+ * per the PSCI spec's shallow-wake option, so we must disarm.
+ */
+static void __secure tegra_fc_cpu_disarm(u32 cpu)
+{
+	u32 halt = FLOWCTRL_HALT_GIC_IRQ | FLOWCTRL_HALT_GIC_FIQ |
+		   FLOWCTRL_HALT_LIC_IRQ | FLOWCTRL_HALT_LIC_FIQ;
+
+	writel(FLOWCTRL_CSR_INTR_FLAG | FLOWCTRL_CSR_EVENT_FLAG,
+	       NV_PA_FLOW_BASE + flowctrl_csr_off[cpu]);
+	readl(NV_PA_FLOW_BASE + flowctrl_csr_off[cpu]);
+	writel(halt, NV_PA_FLOW_BASE + flowctrl_halt_off[cpu]);
+	readl(NV_PA_FLOW_BASE + flowctrl_halt_off[cpu]);
+}
+
+/*
  * CPU_SUSPEND for the DT cpu-sleep state (0x40000007 => single-core power-down).
  * The kernel has already saved its CPU context (cpu_suspend()) and calls this
  * from its suspend finisher with entry_point = cpu_resume. We record that entry
@@ -308,7 +337,17 @@ s32 __secure psci_cpu_suspend_64(u32 __always_unused function_id,
 	/* Flush L1, leave coherency, WFI: the FC power-gates us here. */
 	tegra_cpu_powerdn_wfi();
 
-	/* Reached only if the core did not power down; coherency is restored. */
+	/*
+	 * Reached only if the core did not power down (WFI fell through on an
+	 * already-pending wake); coherency is restored. The flow controller is
+	 * still armed, so disarm it, and retire the resume entry with it: "entry
+	 * is set" must keep meaning "a gate is armed and still pending", which is
+	 * the invariant the trampoline's stale-entry trap tests against.
+	 */
+	tegra_fc_cpu_disarm(cpu);
+	tegra_cpu_entry[cpu] = 0;
+	asm volatile("dsb sy" ::: "memory");
+
 	return ARM_PSCI_RET_SUCCESS;
 }
 
