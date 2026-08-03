@@ -184,6 +184,12 @@ ENTRY(tegra_secondary_entry)
 	/* Enable this core's GICv2 CPU interface (else "GIC CPU mask not found") */
 	bl	tegra_gic_secondary_setup
 
+	/*
+	 * Re-do the SoC-level setup that an SC7 exit needs, now that the CPU
+	 * interface is up. No-op on every other warm-boot path. See psci.c.
+	 */
+	bl	tegra_sc7_resume_finish
+
 	/* Install the EL3 exception vectors shared with the primary CPU */
 	adr	x0, el3_exception_vectors
 	msr	vbar_el3, x0
