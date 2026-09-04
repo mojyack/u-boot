@@ -863,6 +863,22 @@ void reset_set_enable(enum periph_id periph_id, int enable)
  */
 enum periph_id clk_id_to_periph_id(int clk_id)
 {
+	/* Clocks sharing a gate: the second ID is above the register-bit range */
+	switch (clk_id) {
+	case TEGRA210_CLK_UARTB:
+	case TEGRA210_CLK_VFIR:
+		return PERIPH_ID_UART2;
+	case TEGRA210_CLK_SPDIF_IN:
+	case TEGRA210_CLK_SPDIF_OUT:
+		return PERIPH_ID_SPDIF;
+	case TEGRA210_CLK_VI:
+	case TEGRA210_CLK_VI_SENSOR:
+		return PERIPH_ID_VI;
+	case TEGRA210_CLK_FUSE:
+	case TEGRA210_CLK_FUSE_BURN:
+		return PERIPH_ID_FUSE;
+	}
+
 	if (clk_id > PERIPH_ID_COUNT)
 		return PERIPH_ID_NONE;
 

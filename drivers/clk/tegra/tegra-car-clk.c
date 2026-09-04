@@ -30,6 +30,15 @@ static int tegra_car_clk_request(struct clk *clk)
 		return 0;
 	}
 
+	/* An out-of-range ID can still name a user of a shared clock gate */
+	enum periph_id periph_id = clk_id_to_periph_id(clk->id);
+
+	if (periph_id != PERIPH_ID_NONE) {
+		clk->id = periph_id;
+		clk->data |= TEGRA_CAR_CLK_PERIPH;
+		return 0;
+	}
+
 	/* If check for periph failed, then check for PLL clock id */
 	int id = clk_id_to_pll_id(clk->id);
 
