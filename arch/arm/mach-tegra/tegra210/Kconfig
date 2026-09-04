@@ -33,6 +33,14 @@ config TARGET_P3450_0000
 	help
 	  P3450-0000 is a P3448 CPU board married to a P3449 I/O board.
 
+config TARGET_NINTENDO_SWITCH
+	bool "Nintendo Switch"
+	select BOARD_LATE_INIT
+	help
+	  The Nintendo Switch (HAC-001) is a Tegra210 handheld console. U-Boot
+	  runs as BL33 under hekate's L4T loader, which has already brought up
+	  DRAM and installed a BL31 at EL3.
+
 endchoice
 
 config SYS_SOC
@@ -59,6 +67,7 @@ config TEGRA210_CARVEOUT_EXACT_SIZE
 	  memory layout that already excludes them - which is what the Tegra
 	  cboot handoff path does.
 
+source "board/nintendo/switch/Kconfig"
 source "board/nvidia/p2371-0000/Kconfig"
 source "board/nvidia/p2371-2180/Kconfig"
 source "board/nvidia/p2571/Kconfig"
