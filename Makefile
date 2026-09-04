@@ -958,7 +958,7 @@ export LTO_CFLAGS LTO_FINAL_LDFLAGS
 ifeq ($(LTO_ENABLE),y)
 	ifeq ($(cc-name),clang)
 		LTO_CFLAGS		+= -DLTO_ENABLE -flto
-		LTO_FINAL_LDFLAGS	+= -flto
+		LTO_FINAL_LDFLAGS	+= -flto --ld-path=$(LD)
 
 		AR			= $(shell $(CC) -print-prog-name=llvm-ar)
 		NM			= $(shell $(CC) -print-prog-name=llvm-nm)
