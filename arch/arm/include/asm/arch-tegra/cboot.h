@@ -14,8 +14,13 @@
 
 extern unsigned long cboot_boot_x0;
 
-void cboot_save_boot_params(unsigned long x0, unsigned long x1,
-			    unsigned long x2, unsigned long x3);
+/* Inline: save_boot_params() runs before there is a stack */
+static inline void cboot_save_boot_params(unsigned long x0, unsigned long x1,
+					  unsigned long x2, unsigned long x3)
+{
+	cboot_boot_x0 = x0;
+}
+
 int cboot_dram_init(void);
 int cboot_dram_init_banksize(void);
 ulong cboot_get_usable_ram_top(ulong total_size);
