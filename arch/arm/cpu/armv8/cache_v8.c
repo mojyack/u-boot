@@ -964,18 +964,10 @@ void dcache_disable(void)
 	if (!(sctlr & CR_C))
 		return;
 
-	if (IS_ENABLED(CONFIG_CMO_BY_VA_ONLY)) {
-		/*
-		 * When invalidating by VA, do it *before* turning the MMU
-		 * off, so that at least our stack is coherent.
-		 */
-		flush_dcache_all();
-	}
+	/* Flush *before* turning the MMU off, so our stack stays coherent */
+	flush_dcache_all();
 
 	set_sctlr(sctlr & ~(CR_C|CR_M));
-
-	if (!IS_ENABLED(CONFIG_CMO_BY_VA_ONLY))
-		flush_dcache_all();
 
 	__asm_invalidate_tlb_all();
 }
