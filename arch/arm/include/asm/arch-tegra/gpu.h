@@ -19,17 +19,17 @@ static inline void tegra_gpu_config(void)
 
 #endif /* CONFIG_TEGRA_GPU */
 
-#if defined(CONFIG_OF_LIBFDT)
+#if defined(CONFIG_OF_LIBFDT) && defined(CONFIG_TEGRA_GPU)
 
 int tegra_gpu_enable_node(void *blob, const char *gpupath);
 
-#else /* CONFIG_OF_LIBFDT */
+#else /* CONFIG_OF_LIBFDT && CONFIG_TEGRA_GPU */
 
 static inline int tegra_gpu_enable_node(void *blob, const char *compat)
 {
 	return 0;
 }
 
-#endif /* CONFIG_OF_LIBFDT */
+#endif /* CONFIG_OF_LIBFDT && CONFIG_TEGRA_GPU */
 
 #endif	/* __ASM_ARCH_TEGRA_GPU_H */
