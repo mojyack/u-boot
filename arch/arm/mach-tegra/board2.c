@@ -40,6 +40,9 @@
 #include <asm/arch/pinmux.h>
 #endif
 #include <asm/arch/tegra.h>
+#ifdef CONFIG_ARM64
+#include <asm/armv8/mmu.h>
+#endif
 #if IS_ENABLED(CONFIG_TEGRA210_CARVEOUT_EXACT_SIZE)
 #include <asm/arch/mc.h>
 #endif
@@ -47,6 +50,10 @@
 #include <asm/arch/emc.h>
 #endif
 #include "emc.h"
+
+#ifdef CONFIG_ARM64
+extern struct mm_region tegra_mem_map[];
+#endif
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -439,6 +446,47 @@ static phys_size_t usable_ram_size_above_4g(void)
 	return (gd->ram_size - SZ_2G) - carveout_size(false);
 }
 
+#ifdef CONFIG_ARM64
+/* Add one DRAM bank to the MMU translation table description */
+static void tegra_mem_map_add_bank(int *bank, phys_addr_t start,
+				   phys_size_t size)
+{
+	phys_addr_t end = (start + size) & ~(phys_addr_t)(SZ_2M - 1);
+
+	start = (start + SZ_2M - 1) & ~(phys_addr_t)(SZ_2M - 1);
+	if (end <= start)
+		return;
+
+	/* Index is deliberately 1-based to skip the MMIO entry */
+	(*bank)++;
+	tegra_mem_map[*bank].virt = start;
+	tegra_mem_map[*bank].phys = start;
+	tegra_mem_map[*bank].size = end - start;
+	tegra_mem_map[*bank].attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
+				     PTE_BLOCK_INNER_SHARE;
+
+	/* Keep the sentinel entry immediately after the last bank */
+	tegra_mem_map[*bank + 1].virt = 0;
+	tegra_mem_map[*bank + 1].phys = 0;
+	tegra_mem_map[*bank + 1].size = 0;
+	tegra_mem_map[*bank + 1].attrs = 0;
+}
+
+/* Map all reported RAM, carve-outs included */
+static void tegra_mem_map_dram(void)
+{
+	int bank = 0;
+
+	tegra_mem_map_add_bank(&bank, CFG_SYS_SDRAM_BASE,
+			       min_t(phys_size_t, gd->ram_size, SZ_2G));
+
+	if (gd->ram_size > SZ_2G)
+		tegra_mem_map_add_bank(&bank, SZ_4G, gd->ram_size - SZ_2G);
+}
+#else
+static void tegra_mem_map_dram(void) { }
+#endif
+
 /*
  * Represent all available RAM in either one or two banks.
  *
@@ -491,6 +539,8 @@ int dram_init_banksize(void)
 		gd->dram[1].start = 0;
 		gd->dram[1].size = 0;
 	}
+
+	tegra_mem_map_dram();
 
 	return 0;
 }
