@@ -67,12 +67,6 @@ static u64 region_base __section(".data");
  */
 unsigned long cboot_boot_x0 __section(".data");
 
-void cboot_save_boot_params(unsigned long x0, unsigned long x1,
-			    unsigned long x2, unsigned long x3)
-{
-	cboot_boot_x0 = x0;
-}
-
 int cboot_dram_init(void)
 {
 	unsigned int na, ns;
