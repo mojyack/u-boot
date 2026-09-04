@@ -1,0 +1,5 @@
+NINTENDO SWITCH BOARD
+M:	mojyack <mojyack@gmail.com>
+S:	Maintained
+F:	board/nintendo/switch/
+F:	configs/nintendo-switch_defconfig

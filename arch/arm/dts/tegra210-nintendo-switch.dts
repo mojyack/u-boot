@@ -1,0 +1,71 @@
+// SPDX-License-Identifier: GPL-2.0+
+/*
+ * (C) Copyright 2022-2023, CTCaer.
+ */
+/dts-v1/;
+
+#include "tegra210.dtsi"
+
+/ {
+	model = "Nintendo Switch";
+	compatible = "nintendo,switch", "nvidia,tegra210";
+
+	chosen {
+		stdout-path = &uartb;
+	};
+
+	aliases {
+		i2c0 = "/i2c@7000d000";
+		mmc0 = "/mmc@700b0600";
+		mmc1 = "/mmc@700b0000";
+	};
+
+	memory {
+		reg = <0x0 0x80000000 0x0 0x80000000>;
+	};
+
+	/*
+	 * hekate's L4T loader installs the switch-atf BL31 at EL3 before it
+	 * enters U-Boot at EL2, so PSCI is what reboots and powers off this
+	 * board; the PMC is not reachable from non-secure.
+	 */
+	psci {
+		compatible = "arm,psci-1.0";
+		method = "smc";
+	};
+
+	serial@70006040 {
+		status = "okay";
+	};
+
+	i2c@7000d000 {
+		status = "okay";
+		clock-frequency = <400000>;
+	};
+
+	mmc@700b0000 {
+		status = "okay";
+		cd-gpios = <&gpio TEGRA_GPIO(Z, 1) GPIO_ACTIVE_LOW>;
+		power-gpios = <&gpio TEGRA_GPIO(E, 4) GPIO_ACTIVE_HIGH>;
+		bus-width = <4>;
+	};
+
+	mmc@700b0600 {
+		status = "okay";
+		bus-width = <8>;
+		non-removable;
+	};
+
+	clocks {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		clk32k_in: clock@0 {
+			compatible = "fixed-clock";
+			reg = <0>;
+			#clock-cells = <0>;
+			clock-frequency = <32768>;
+		};
+	};
+};
