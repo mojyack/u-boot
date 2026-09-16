@@ -12,6 +12,11 @@
  *
  * The T210 A57s are r1p1, which is in scope for all of the below.
  *
+ * Erratum 828024 is deliberately not applied: its workaround disables write
+ * streaming, which costs 2.6x of CPU write bandwidth to DRAM, and the errata
+ * notice scopes it to multi-cluster systems using DVM transactions, which
+ * T210 is not. NVIDIA's own shipped monitor does not apply it either.
+ *
  * This is applied in three places, matching the three ways a core starts
  * executing:
  *   - the boot CPU, via the weak apply_core_errata hook in start.S;
@@ -33,18 +38,15 @@
  *   (1 << 59)  DIS_LOAD_PASS_DMB    erratum 826974  (<= r1p1)
  *   (1 << 54)  GRE_NGRE_AS_NGNRE    erratum 826977  (<= r1p1)
  *   (1 << 52)  DIS_OVERREAD         LDNP/STNP over-read (<= r1p2)
- *   (1 << 49)  NO_ALLOC_WBWA        erratum 828024  (<= r1p1)
  *   (1 << 38)  FORCE_FPSCR_FLUSH    erratum 833471  (<= r1p2)
- *   (3 << 27)  DIS_STREAMING        erratum 828024
- *   (3 << 25)  DIS_L1_STREAMING     erratum 828024
  *   (1 << 24)  EN_NC_LOAD_FWD       non-cacheable load forwarding (perf)
  *
- * = 0x085200401f000000. Built with movz/movk since it is not encodable as a
+ * = 0x0850004001000000. Built with movz/movk since it is not encodable as a
  * logical immediate.
  */
-#define CPUACTLR_ERRATA_HI16	0x0852	/* bits 63:48 */
+#define CPUACTLR_ERRATA_HI16	0x0850	/* bits 63:48 */
 #define CPUACTLR_ERRATA_HM16	0x0040	/* bits 47:32 */
-#define CPUACTLR_ERRATA_LM16	0x1f00	/* bits 31:16 */
+#define CPUACTLR_ERRATA_LM16	0x0100	/* bits 31:16 */
 
 #define MIDR_PART_CORTEX_A57	0xd07
 #define CURRENTEL_EL3		0xc
