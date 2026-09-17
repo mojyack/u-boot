@@ -36,15 +36,16 @@
  * include/lib/cpus/aarch64/cortex_a57.h. The combined mask is:
  *
  *   (1 << 59)  DIS_LOAD_PASS_DMB    erratum 826974  (<= r1p1)
+ *   (1 << 55)  DIS_LOAD_PASS_STORE  CVE-2018-3639   (all revisions)
  *   (1 << 54)  GRE_NGRE_AS_NGNRE    erratum 826977  (<= r1p1)
  *   (1 << 52)  DIS_OVERREAD         LDNP/STNP over-read (<= r1p2)
  *   (1 << 38)  FORCE_FPSCR_FLUSH    erratum 833471  (<= r1p2)
  *   (1 << 24)  EN_NC_LOAD_FWD       non-cacheable load forwarding (perf)
  *
- * = 0x0850004001000000. Built with movz/movk since it is not encodable as a
+ * = 0x08d0004001000000. Built with movz/movk since it is not encodable as a
  * logical immediate.
  */
-#define CPUACTLR_ERRATA_HI16	0x0850	/* bits 63:48 */
+#define CPUACTLR_ERRATA_HI16	0x08d0	/* bits 63:48 */
 #define CPUACTLR_ERRATA_HM16	0x0040	/* bits 47:32 */
 #define CPUACTLR_ERRATA_LM16	0x0100	/* bits 31:16 */
 
