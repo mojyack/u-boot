@@ -70,8 +70,6 @@
 /* Flow controller (NV_PA_FLOW_BASE): per-CPU CSR and halt-event registers */
 #define FLOWCTRL_WAITEVENT		(2 << 29)	/* HALT: FLOW_MODE_WAITEVENT */
 #define FLOWCTRL_HALT_SCLK		(1 << 27)
-#define FLOWCTRL_HALT_LIC_IRQ		(1 << 11)	/* HALT: wake on LIC IRQ */
-#define FLOWCTRL_HALT_LIC_FIQ		(1 << 10)	/* HALT: wake on LIC FIQ */
 #define FLOWCTRL_HALT_GIC_IRQ		(1 << 9)	/* HALT: wake on GIC IRQ */
 #define FLOWCTRL_HALT_GIC_FIQ		(1 << 8)	/* HALT: wake on GIC FIQ */
 #define FLOWCTRL_CSR_INTR_FLAG		(1 << 15)	/* CSR: W1C interrupt status */
@@ -521,7 +519,7 @@ s32 __secure psci_cpu_on(u32 function_id, u32 mpidr, u32 entry_point,
 
 /*
  * Arm the flow controller to power-gate this core the next time it executes
- * WFI, waking on any GIC/LIC interrupt. Mirrors ARM-TF t210's
+ * WFI, waking on any GIC interrupt. Mirrors ARM-TF t210's
  * tegra_fc_prepare_suspend(cpu, 0) for the core-power-down case. The CSR ENABLE
  * bit is cleared by hardware once the power-gate sequence completes, so no
  * disarm is needed on resume - a subsequent plain kernel WFI will not re-gate.
@@ -575,7 +573,6 @@ static void __secure tegra_fc_bpmp_on(u32 entrypoint)
 static void __secure tegra_fc_prepare_suspend(u32 cpu, u32 csr_extra)
 {
 	u32 halt = FLOWCTRL_HALT_GIC_IRQ | FLOWCTRL_HALT_GIC_FIQ |
-		   FLOWCTRL_HALT_LIC_IRQ | FLOWCTRL_HALT_LIC_FIQ |
 		   FLOWCTRL_WAITEVENT;
 	u32 csr = FLOWCTRL_CSR_INTR_FLAG | FLOWCTRL_CSR_EVENT_FLAG |
 		  FLOWCTRL_CSR_ENABLE | (FLOWCTRL_WAIT_WFI_BITMAP << cpu);
@@ -690,8 +687,7 @@ static bool __secure tegra_bpmp_sc7_start(void)
  */
 static void __secure tegra_fc_cpu_disarm(u32 cpu)
 {
-	u32 halt = FLOWCTRL_HALT_GIC_IRQ | FLOWCTRL_HALT_GIC_FIQ |
-		   FLOWCTRL_HALT_LIC_IRQ | FLOWCTRL_HALT_LIC_FIQ;
+	u32 halt = FLOWCTRL_HALT_GIC_IRQ | FLOWCTRL_HALT_GIC_FIQ;
 
 	writel(FLOWCTRL_CSR_INTR_FLAG | FLOWCTRL_CSR_EVENT_FLAG,
 	       NV_PA_FLOW_BASE + flowctrl_csr_off[cpu]);
