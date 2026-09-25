@@ -52,6 +52,7 @@
 #define tegra_wfi()	asm volatile("wfi" ::: "memory")
 
 #define MPIDR_CPU_MASK			0xff
+#define SCTLR_EL3_I			BIT(12)
 
 /*
  * PSCI_FEATURES return flag for CPU_SUSPEND: bit 1 advertises the extended
@@ -417,6 +418,15 @@ void __secure tegra_sc7_resume_finish(void)
 	 * ACR with -110.
 	 */
 	tegra_mc_security_setup();
+}
+
+/* Undo cleanup_before_linux()'s I-cache disable for the boot CPU's EL3 */
+void __secure psci_arch_init(void)
+{
+	u64 sctlr;
+
+	asm volatile("mrs %0, sctlr_el3" : "=r"(sctlr));
+	asm volatile("msr sctlr_el3, %0; isb" : : "r"(sctlr | SCTLR_EL3_I));
 }
 
 /* Point the Tegra secure reset vectors at our secondary-CPU trampoline. */

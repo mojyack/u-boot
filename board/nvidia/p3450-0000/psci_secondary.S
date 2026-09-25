@@ -123,6 +123,12 @@ ENTRY(tegra_secondary_entry)
 	msr	oslar_el1, x0
 	isb
 
+	/* I-cache on: with SCTLR_EL3.I clear every fetch is an uncached read */
+	mrs	x0, sctlr_el3
+	orr	x0, x0, #CR_I
+	msr	sctlr_el3, x0
+	isb
+
 	/*
 	 * Re-apply the Cortex-A57 erratum workarounds (errata.S). CPUACTLR_EL1
 	 * is per-CPU and returns to its reset value whenever a core comes out
@@ -217,7 +223,7 @@ ENTRY(tegra_secondary_entry)
 	/* Drop to Non-secure EL2 (AArch64) at x4, preserving x0 = context ID */
 	mov	x5, #ES_TO_AARCH64
 	isb
-	armv8_switch_to_el2_m x4, x5, x6
+	armv8_switch_to_el2_m x4, x5, x6, CR_I
 
 9:	/* Unexpected warm boot: no armed entry, so there is nowhere to go. */
 1:	wfi
