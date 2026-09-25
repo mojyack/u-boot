@@ -154,7 +154,7 @@ lr	.req	x30
  * For loading 64-bit OS, x0 is physical address to the FDT blob.
  * They will be passed to the guest.
  */
-.macro armv8_switch_to_el2_m, ep, flag, tmp
+.macro armv8_switch_to_el2_m, ep, flag, tmp, sctlr=0
 	msr	cptr_el3, xzr		/* Disable coprocessor traps to EL3 */
 	mov	\tmp, #CPTR_EL2_RES1
 	msr	cptr_el2, \tmp		/* Disable coprocessor traps to EL2 */
@@ -171,7 +171,8 @@ lr	.req	x30
 	ldr	\tmp, =(SCTLR_EL2_RES1 | SCTLR_EL2_EE_LE |\
 			SCTLR_EL2_WXN_DIS | SCTLR_EL2_ICACHE_DIS |\
 			SCTLR_EL2_SA_DIS | SCTLR_EL2_DCACHE_DIS |\
-			SCTLR_EL2_ALIGN_DIS | SCTLR_EL2_MMU_DIS)
+			SCTLR_EL2_ALIGN_DIS | SCTLR_EL2_MMU_DIS |\
+			\sctlr)
 	msr	sctlr_el2, \tmp
 
 	mov	\tmp, sp
